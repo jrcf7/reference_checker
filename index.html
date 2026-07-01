@@ -502,71 +502,81 @@ async function extractPDFText(file, onPage) {
 
     const page    = await pdf.getPage(p);
     const content = await page.getTextContent();
-    const vp      = page.getViewport({ scale: 1 });
-    const pageW   = vp.width;
 
-    // Collect items with coordinates
+    // Collect all text items with position
     const items = content.items
-      .filter(it => it.str && it.str.trim())
+      .filter(it => it.str != null)
       .map(it => ({
         str:    it.str,
         x:      it.transform[4],
         y:      it.transform[5],
-        width:  it.width || 0,
+        width:  it.width  || 0,
         height: Math.abs(it.transform[3]) || 10,
       }));
 
     if (!items.length) { full += '\n\n'; continue; }
 
-    // Detect two-column layout: if items cluster into two x-bands
-    const midX = pageW / 2;
-    const leftItems  = items.filter(it => it.x + it.width / 2 < midX);
-    const rightItems = items.filter(it => it.x + it.width / 2 >= midX);
-    const isTwoCol = leftItems.length > 5 && rightItems.length > 5 &&
-                     (leftItems.length / items.length) > 0.25 &&
-                     (rightItems.length / items.length) > 0.25;
+    // Compute line height tolerance from median item height
+    const heights = items.map(it => it.height).sort((a, b) => a - b);
+    const medH = heights[Math.floor(heights.length / 2)];
+    const lineTol = Math.max(3, medH * 0.5);
 
-    // Group items into logical lines
-    // Sort: descending y (top of page first), then ascending x
+    // Sort items top-to-bottom (descending y), then left-to-right (ascending x)
     const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
 
-    // Use average item height to set line-merge tolerance
-    const avgH = sorted.reduce((s, it) => s + it.height, 0) / sorted.length;
-    const lineTol = Math.max(4, avgH * 0.55);
-
-    // Assign items to line buckets
-    const lineBuckets = [];
+    // Group into line buckets by y proximity
+    const buckets = [];
     for (const it of sorted) {
-      const last = lineBuckets[lineBuckets.length - 1];
+      const last = buckets[buckets.length - 1];
       if (!last || Math.abs(it.y - last.y) > lineTol) {
-        lineBuckets.push({ y: it.y, items: [it] });
+        buckets.push({ y: it.y, items: [it] });
       } else {
         last.items.push(it);
       }
     }
 
-    // Sort items within each line by x
-    for (const lb of lineBuckets) lb.items.sort((a, b) => a.x - b.x);
+    const pageW = page.getViewport({ scale: 1 }).width;
 
-    // Convert line buckets to text lines.
-    // For two-column pages, split each line bucket into left/right halves and
-    // collect all left-column lines first, then right-column lines.
+    // First pass: build simple lines (no column splitting yet)
+    const simpleLines = buckets.map(bkt => bkt.items.map(it => it.str).join(''));
+
+    // Second pass: detect two-column by finding lines with a large interior x-gap
+    // Count how many lines have a gap > 15% of page width
+    let splitLineCount = 0;
+    for (const bkt of buckets) {
+      for (let i = 1; i < bkt.items.length; i++) {
+        const gap = bkt.items[i].x - (bkt.items[i - 1].x + (bkt.items[i - 1].width || 0));
+        if (gap > pageW * 0.15) { splitLineCount++; break; }
+      }
+    }
+    const hasTwoCols = splitLineCount >= 4;
+
     let lines;
-    if (isTwoCol) {
-      const leftLines = [];
-      const rightLines = [];
-      for (const lb of lineBuckets) {
-        const leftParts  = lb.items.filter(it => it.x + it.width / 2 < midX);
-        const rightParts = lb.items.filter(it => it.x + it.width / 2 >= midX);
-        if (leftParts.length)  leftLines.push(leftParts.map(it => it.str).join(''));
-        if (rightParts.length) rightLines.push(rightParts.map(it => it.str).join(''));
+    if (hasTwoCols) {
+      // Re-split each bucket into left/right at the largest gap
+      const leftLines = [], rightLines = [];
+      for (const bkt of buckets) {
+        let maxGap = 0, gapIdx = -1;
+        for (let i = 1; i < bkt.items.length; i++) {
+          const gap = bkt.items[i].x - (bkt.items[i - 1].x + (bkt.items[i - 1].width || 0));
+          if (gap > maxGap) { maxGap = gap; gapIdx = i; }
+        }
+        if (maxGap > pageW * 0.15 && gapIdx > 0) {
+          const l = bkt.items.slice(0, gapIdx).map(it => it.str).join('');
+          const r = bkt.items.slice(gapIdx).map(it => it.str).join('');
+          if (l.trim()) leftLines.push(l);
+          if (r.trim()) rightLines.push(r);
+        } else {
+          const t = bkt.items.map(it => it.str).join('');
+          if (t.trim()) leftLines.push(t);
+        }
       }
       lines = [...leftLines, '', ...rightLines];
     } else {
-      lines = lineBuckets.map(lb => lb.items.map(it => it.str).join(''));
+      lines = simpleLines;
     }
 
-    // Join lines preserving newlines; de-hyphenate only soft (word-wrap) hyphens
+    // Join lines; de-hyphenate soft (word-wrap) hyphens only
     let pageText = '';
     for (const ln of lines) {
       if (!ln.trim()) {
