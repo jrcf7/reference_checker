@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reference Checker</title>
+<style>
+:root {
+  --blue: #2563eb;
+  --blue-light: #eff6ff;
+  --blue-dark: #1d4ed8;
+  --green: #16a34a;
+  --green-light: #f0fdf4;
+  --amber: #d97706;
+  --amber-light: #fffbeb;
+  --red: #dc2626;
+  --red-light: #fef2f2;
+  --gray: #6b7280;
+  --gray-light: #f9fafb;
+  --border: #e5e7eb;
+  --text: #111827;
+  --text-muted: #9ca3af;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--gray-light);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+header {
+  background: white;
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-icon { font-size: 1.75rem; line-height: 1; }
+.header-title { font-size: 1.2rem; font-weight: 700; }
+.header-sub { color: var(--gray); font-size: 0.8rem; margin-top: 1px; }
+
+main { max-width: 1120px; margin: 1.75rem auto; padding: 0 1.25rem; }
+
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+/* ── Upload ── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  position: relative;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+.drop-zone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+.drop-icon { font-size: 2.5rem; margin-bottom: .75rem; }
+.drop-main { font-size: 1rem; font-weight: 600; margin-bottom: .4rem; }
+.drop-hint { color: var(--gray); font-size: 0.8rem; }
+
+/* ── Settings ── */
+details > summary {
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--gray);
+  padding: .75rem 0 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  user-select: none;
+}
+details > summary::before { content: '▶'; font-size: .6rem; transition: transform .2s; }
+details[open] > summary::before { transform: rotate(90deg); }
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: .35rem;
+  color: var(--text);
+}
+.field input[type=email],
+.field input[type=number] {
+  width: 100%;
+  padding: .45rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .875rem;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+.field .range-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.field input[type=range] { flex: 1; }
+.field .range-val { font-size: .8rem; font-weight: 600; color: var(--blue); min-width: 2.5rem; }
+
+/* ── Progress ── */
+.progress-step { font-weight: 600; font-size: .95rem; margin-bottom: .25rem; }
+.progress-detail { color: var(--gray); font-size: .8rem; min-height: 1.2em; }
+.pbar-wrap {
+  background: var(--border);
+  border-radius: 999px;
+  height: 6px;
+  margin: .75rem 0 1rem;
+  overflow: hidden;
+}
+.pbar {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem 1rem;
+  border-radius: 6px;
+  font-size: .875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .15s, border-color .15s;
+  line-height: 1;
+}
+.btn-primary { background: var(--blue); color: white; }
+.btn-primary:hover { background: var(--blue-dark); }
+.btn-ghost { background: white; color: var(--text); border-color: var(--border); }
+.btn-ghost:hover { background: var(--gray-light); }
+
+/* ── Stats ── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: .75rem;
+}
+.stat {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+.stat-num { font-size: 1.75rem; font-weight: 700; line-height: 1; margin-bottom: .2rem; }
+.stat-lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--gray); }
+.stat.s-verified .stat-num { color: var(--green); }
+.stat.s-mismatch .stat-num { color: var(--amber); }
+.stat.s-notfound .stat-num { color: var(--red); }
+.stat.s-nodoi   .stat-num { color: var(--gray); }
+
+/* ── Filter bar ── */
+.filter-row {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+.filter-row .label { font-size: .8rem; color: var(--gray); margin-right: .25rem; }
+.chip {
+  padding: .3rem .8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .8rem;
+  cursor: pointer;
+  background: white;
+  transition: all .15s;
+  font-weight: 500;
+}
+.chip.active, .chip:hover { background: var(--blue); border-color: var(--blue); color: white; }
+
+/* ── Results table ── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  text-align: left;
+  padding: .6rem 1rem;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--gray);
+  background: var(--gray-light);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td {
+  padding: .8rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #fafafa; }
+
+.ref-num { font-weight: 700; color: var(--gray); font-size: .85rem; }
+.ref-text {
+  font-size: .82rem;
+  color: #374151;
+  max-width: 320px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.ref-toggle {
+  font-size: .72rem;
+  color: var(--blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  display: block;
+  margin-top: 3px;
+}
+.ref-toggle:hover { text-decoration: underline; }
+
+.doi-link {
+  font-family: 'Courier New', monospace;
+  font-size: .75rem;
+  color: var(--blue);
+  text-decoration: none;
+  word-break: break-all;
+}
+.doi-link:hover { text-decoration: underline; }
+.no-val { color: var(--text-muted); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  padding: .22rem .6rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-verified { background: var(--green-light); color: var(--green); }
+.badge-mismatch { background: var(--amber-light); color: var(--amber); }
+.badge-notfound { background: var(--red-light); color: var(--red); }
+.badge-nodoi    { background: var(--gray-light); color: var(--gray); border: 1px solid var(--border); }
+.badge-checking { background: var(--blue-light); color: var(--blue); }
+.badge-error    { background: var(--red-light); color: var(--red); }
+
+.detail-title { font-size: .82rem; font-weight: 500; color: var(--text); margin-bottom: .2rem; }
+.detail-meta { font-size: .75rem; color: var(--gray); margin-top: .15rem; line-height: 1.5; }
+.detail-msg { font-size: .75rem; color: var(--gray); font-style: italic; }
+
+.sim-bar-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .75rem;
+}
+.sim-bar {
+  width: 48px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+.sim-fill { height: 100%; border-radius: 3px; }
+
+.flex { display: flex; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: .5rem; }
+.hidden { display: none !important; }
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--gray);
+  font-size: .9rem;
+}
+
+.raw-text-area {
+  width: 100%;
+  height: 180px;
+  font-size: .75rem;
+  font-family: monospace;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .5rem;
+  resize: vertical;
+  color: var(--gray);
+  background: var(--gray-light);
+  margin-top: .75rem;
+}
+
+.notice {
+  background: var(--amber-light);
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: .6rem .9rem;
+  font-size: .8rem;
+  color: #92400e;
+  margin-top: .75rem;
+}
+
+@media (max-width: 640px) {
+  header { padding: .75rem 1rem; }
+  main { padding: 0 .75rem; margin-top: 1rem; }
+  .card { padding: 1rem; }
+  .stats-row { grid-template-columns: repeat(3, 1fr); }
+  .drop-zone { padding: 2rem 1rem; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-icon">📚</div>
+  <div>
+    <div class="header-title">Reference Checker</div>
+    <div class="header-sub">Upload a PDF — extract references — verify via CrossRef DOI API</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══ Upload Card ══ -->
+  <div class="card" id="uploadCard">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".pdf">
+      <div class="drop-icon">📄</div>
+      <div class="drop-main">Drop a PDF here or click to select</div>
+      <div class="drop-hint">Bibliography is extracted, each reference verified against CrossRef (title must match — a DOI alone is not enough)</div>
+    </div>
+
+    <div class="notice" id="scanNotice" style="display:none">
+      ⚠️ This PDF appears to contain no extractable text (possibly a scan). Try an OCR tool first.
+    </div>
+
+    <details>
+      <summary>Settings</summary>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="emailInput">Your e-mail <span style="color:var(--gray);font-weight:400">(improves CrossRef rate limits)</span></label>
+          <input type="email" id="emailInput" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label>Title similarity threshold</label>
+          <div class="range-row">
+            <input type="range" id="thresholdInput" min="30" max="90" value="60" step="5">
+            <span class="range-val" id="thresholdVal">60%</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="delayInput">Delay between requests (ms)</label>
+          <input type="number" id="delayInput" value="300" min="50" max="3000">
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ══ Progress Card ══ -->
+  <div class="card hidden" id="progressCard">
+    <div class="progress-step" id="progStep">Initialising…</div>
+    <div class="progress-detail" id="progDetail">&nbsp;</div>
+    <div class="pbar-wrap"><div class="pbar" id="pbar" style="width:0%"></div></div>
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+  </div>
+
+  <!-- ══ Stats Row ══ -->
+  <div class="stats-row hidden" id="statsRow">
+    <div class="stat">
+      <div class="stat-num" id="sTotal">0</div>
+      <div class="stat-lbl">Total</div>
+    </div>
+    <div class="stat s-verified">
+      <div class="stat-num" id="sVerified">0</div>
+      <div class="stat-lbl">Verified</div>
+    </div>
+    <div class="stat s-mismatch">
+      <div class="stat-num" id="sMismatch">0</div>
+      <div class="stat-lbl">Mismatch</div>
+    </div>
+    <div class="stat s-notfound">
+      <div class="stat-num" id="sNotFound">0</div>
+      <div class="stat-lbl">Not Found</div>
+    </div>
+    <div class="stat s-nodoi">
+      <div class="stat-num" id="sNoDoi">0</div>
+      <div class="stat-lbl">No DOI</div>
+    </div>
+  </div>
+
+  <!-- ══ Results Card ══ -->
+  <div class="card hidden" id="resultsCard">
+    <div class="flex items-center justify-between" style="margin-bottom:1rem">
+      <div class="card-title" style="margin:0" id="resultsHeading">Results</div>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost" id="exportBtn">⬇ Export CSV</button>
+        <button class="btn btn-ghost" id="resetBtn">↩ New PDF</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <span class="label">Filter:</span>
+      <button class="chip active" data-f="all">All</button>
+      <button class="chip" data-f="verified">✅ Verified</button>
+      <button class="chip" data-f="mismatch">⚠️ Mismatch</button>
+      <button class="chip" data-f="notfound">❌ Not Found</button>
+      <button class="chip" data-f="nodoi">ℹ️ No DOI</button>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Reference text</th>
+            <th>DOI in reference</th>
+            <th>Status</th>
+            <th>CrossRef result &amp; title match</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══ Raw text (debug) ══ -->
+  <div class="card hidden" id="rawCard">
+    <details>
+      <summary>Raw extracted text (debug)</summary>
+      <textarea class="raw-text-area" id="rawTextArea" readonly></textarea>
+    </details>
+  </div>
+
+</main>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────
+// Setup
+// ─────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const CROSSREF = 'https://api.crossref.org/works';
+
+let cancelled = false;
+let results   = [];   // { refText, doi, status, verification }
+let activeFilter = 'all';
+
+// ─────────────────────────────────────────────
+// PDF text extraction
+// ─────────────────────────────────────────────
+async function extractPDFText(file, onPage) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let full = '';
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    if (cancelled) throw new Error('cancelled');
+    onPage(p, pdf.numPages);
+
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    // Group items into lines by y-coordinate
+    const lines = [];
+    let curLine = { y: null, parts: [] };
+
+    for (const item of content.items) {
+      if (!item.str) continue;
+      const y = Math.round(item.transform[5]);
+
+      if (curLine.y === null) {
+        curLine.y = y;
+      } else if (Math.abs(y - curLine.y) > 4) {
+        lines.push(curLine.parts.join(''));
+        curLine = { y, parts: [] };
+      }
+      curLine.parts.push(item.str);
+    }
+    if (curLine.parts.length) lines.push(curLine.parts.join(''));
+
+    // Join lines, de-hyphenate soft line breaks
+    let pageText = '';
+    for (const ln of lines) {
+      if (pageText.endsWith('-')) {
+        pageText = pageText.slice(0, -1) + ln;
+      } else {
+        pageText += (pageText ? ' ' : '') + ln;
+      }
+    }
+    full += pageText + '\n\n';
+  }
+  return full;
+}
+
+// ─────────────────────────────────────────────
+// Locate bibliography section
+// ─────────────────────────────────────────────
+function findBibSection(text) {
+  const HEADERS = [
+    /\b(References?)\b/i,
+    /\b(Bibliography)\b/i,
+    /\b(Works\s+Cited)\b/i,
+    /\b(Literature\s+Cited)\b/i,
+    /\b(Bibliographie)\b/i,
+    /\b(Références?)\b/i,
+    /\b(Literatur)\b/i,
+  ];
+
+  let lastPos = -1;
+  for (const pat of HEADERS) {
+    let m;
+    const re = new RegExp(pat.source, 'gi');
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > lastPos) lastPos = m.index;
+    }
+  }
+
+  if (lastPos >= 0) {
+    // Skip the header line itself
+    const afterHeader = text.indexOf('\n', lastPos);
+    return afterHeader >= 0 ? text.slice(afterHeader + 1) : text.slice(lastPos);
+  }
+
+  // Fallback: last 35 % of the document
+  return text.slice(Math.floor(text.length * 0.65));
+}
+
+// ─────────────────────────────────────────────
+// Split into individual references
+// ─────────────────────────────────────────────
+function splitRefs(text) {
+  text = text.replace(/\r\n?/g, '\n').trim();
+
+  // Strategy 1: [1], [2] … numbered brackets
+  if (text.match(/(?:^|\n)\s*\[\d+\]/m)) {
+    return chunkByPattern(text, /(?:^|\n)\s*\[\d+\]/gm);
+  }
+
+  // Strategy 2: 1. 2. … numbered list with capital letter following
+  if (text.match(/(?:^|\n)\s*\d+\.\s+[A-Z]/m)) {
+    return chunkByPattern(text, /(?:^|\n)\s*\d+\.\s+(?=[A-Z])/gm);
+  }
+
+  // Strategy 3: blank-line separated
+  const byBlank = text
+    .split(/\n\s*\n/)
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(s => s.length > 30 && s.length < 3000);
+  if (byBlank.length >= 2) return byBlank;
+
+  // Strategy 4: each line starting with a capital (hanging-indent style)
+  const chunks = [];
+  let cur = '';
+  for (const ln of text.split('\n')) {
+    const t = ln.trim();
+    if (!t) continue;
+    if (/^[A-Z]/.test(t) && cur.length > 40) {
+      chunks.push(cur.trim());
+      cur = t;
+    } else {
+      cur += (cur ? ' ' : '') + t;
+    }
+  }
+  if (cur.length > 30) chunks.push(cur.trim());
+  if (chunks.length >= 2) return chunks;
+
+  // Give up – return the whole section as one entry
+  return text.length > 30 ? [text.replace(/\s+/g, ' ')] : [];
+}
+
+function chunkByPattern(text, re) {
+  const matches = [...text.matchAll(re)];
+  return matches
+    .map((m, i) => {
+      const start = m.index + m[0].length;
+      const end   = i + 1 < matches.length ? matches[i + 1].index : text.length;
+      return text.slice(start, end).replace(/\s+/g, ' ').trim();
+    })
+    .filter(s => s.length > 20);
+}
+
+// ─────────────────────────────────────────────
+// Extract DOIs and title from a reference string
+// ─────────────────────────────────────────────
+const DOI_RE = /\b(10\.\d{4,9}\/[^\s,;'")\]>–—·]+)/g;
+
+function extractDOI(text) {
+  const matches = [...text.matchAll(DOI_RE)];
+  if (!matches.length) return null;
+  // Take first DOI, strip trailing punctuation
+  return matches[0][1].replace(/[.,;:)}\]]+$/, '');
+}
+
+function extractTitle(ref) {
+  // MLA / Chicago: title in smart/regular quotes
+  const q = ref.match(/[“""]([^"“”]{15,220})[”""]/);
+  if (q) return q[1].trim();
+
+  // APA: after (YYYY). or (YYYY, Month).
+  const apa = ref.match(/\(\d{4}[a-z]?(?:,\s*[A-Z][a-z]+)?\)[.)]\s+([^.]{15,220})\./);
+  if (apa) return apa[1].trim();
+
+  // Vancouver: strip leading author block (ends at first period followed by space+Capital)
+  const van = ref.replace(/^\[?\d+\]?[.\s]+/, '').match(/^[A-Z][^.]+?\.\s+([^.]{15,220})\./);
+  if (van) return van[1].trim();
+
+  // Fallback: take words 3-20 (skip likely author prefix)
+  const words = ref.replace(/^\[?\d+\]?[.\s]+/, '').split(/\s+/);
+  return words.slice(Math.min(3, words.length - 1), 22).join(' ');
+}
+
+// ─────────────────────────────────────────────
+// Title similarity (Jaccard on content words)
+// ─────────────────────────────────────────────
+const STOPS = new Set('a an the of in on at to for with and or but by from as is was are were be been being has have had do does did will would may might shall should can could its it this that these those their they them there here when where which who whom how why what all each every both few more most other some such no not only own same than too very i s'.split(' '));
+
+function tokenise(s) {
+  return s.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOPS.has(w));
+}
+
+function similarity(a, b) {
+  if (!a || !b) return 0;
+  const tA = tokenise(a);
+  const tB = new Set(tokenise(b));
+  if (!tA.length || !tB.size) return 0;
+  const hits = tA.filter(w => tB.has(w)).length;
+  return hits / Math.max(tA.length, tB.size);
+}
+
+// ─────────────────────────────────────────────
+// CrossRef API helpers
+// ─────────────────────────────────────────────
+function mailtoParam() {
+  const em = document.getElementById('emailInput').value.trim();
+  return em ? `&mailto=${encodeURIComponent(em)}` : '';
+}
+
+async function crFetch(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), { status: r.status });
+  return r.json();
+}
+
+function parseWork(work) {
+  return {
+    title:   (work.title || [])[0] || '',
+    journal: (work['container-title'] || [])[0] || '',
+    year:    ((work.issued || {})['date-parts'] || [[]])[0][0] || '',
+    authors: (work.author || []).map(a => a.family || a.name || '').filter(Boolean).join(', '),
+    doi:     work.DOI || '',
+    url:     work.URL || (work.DOI ? 'https://doi.org/' + work.DOI : ''),
+  };
+}
+
+async function verifyDOI(doi, refTitle) {
+  const thresh = (parseInt(document.getElementById('thresholdInput').value) || 60) / 100;
+  try {
+    const data = await crFetch(`${CROSSREF}/${encodeURIComponent(doi)}?${mailtoParam().slice(1)}`);
+    const w  = parseWork(data.message);
+    const sim = similarity(w.title, refTitle);
+    return {
+      status: sim >= thresh ? 'verified' : (w.title ? 'mismatch' : 'notfound'),
+      ...w,
+      sim: Math.round(sim * 100),
+    };
+  } catch (e) {
+    if (e.status === 404) return { status: 'notfound', title: '', message: 'DOI not found in CrossRef' };
+    return { status: 'error', title: '', message: e.message };
+  }
+}
+
+async function searchBiblio(refText) {
+  const thresh = (parseInt(document.getElementById('thresholdInput').value) || 60) / 100;
+  const q  = encodeURIComponent(refText.slice(0, 300));
+  const mp = mailtoParam();
+  try {
+    const data = await crFetch(`${CROSSREF}?query.bibliographic=${q}&rows=5${mp}`);
+    const items = (data.message || {}).items || [];
+    if (!items.length) return null;
+
+    const refTitle = extractTitle(refText);
+    let best = null, bestSim = 0;
+    for (const item of items) {
+      const t = (item.title || [])[0] || '';
+      const s = similarity(t, refTitle);
+      if (s > bestSim) { bestSim = s; best = item; }
+    }
+    if (!best || bestSim < 0.25) return null;
+
+    const w = parseWork(best);
+    return {
+      status: bestSim >= thresh ? 'verified' : 'mismatch',
+      ...w,
+      sim: Math.round(bestSim * 100),
+      foundViaBiblio: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function show(id)  { $(id).classList.remove('hidden'); }
+function hide(id)  { $(id).classList.add('hidden'); }
+
+function setProgress(step, detail, pct) {
+  $('progStep').textContent   = step;
+  $('progDetail').textContent = detail || ' ';
+  if (pct !== undefined) $('pbar').style.width = pct + '%';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function badge(status) {
+  const MAP = {
+    verified: ['✅', 'badge-verified', 'Verified'],
+    mismatch: ['⚠️', 'badge-mismatch', 'Title mismatch'],
+    notfound: ['❌', 'badge-notfound', 'Not found'],
+    nodoi:    ['ℹ️', 'badge-nodoi',    'No DOI'],
+    error:    ['⚠️', 'badge-error',    'Error'],
+    checking: ['⏳', 'badge-checking', 'Checking…'],
+  };
+  const [icon, cls, lbl] = MAP[status] || MAP.error;
+  return `<span class="badge ${cls}">${icon} ${lbl}</span>`;
+}
+
+function simBar(pct) {
+  const col = pct >= 60 ? '#16a34a' : pct >= 35 ? '#d97706' : '#dc2626';
+  return `<span class="sim-bar-wrap"><span class="sim-bar"><span class="sim-fill" style="width:${pct}%;background:${col}"></span></span>${pct}%</span>`;
+}
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderRow(r, idx) {
+  const short = r.refText.length > 90 ? r.refText.slice(0, 90) + '…' : r.refText;
+  const status = r.status || (r.doi ? 'checking' : 'nodoi');
+
+  // DOI cell
+  const doiCell = r.doi
+    ? `<a class="doi-link" href="https://doi.org/${esc(r.doi)}" target="_blank" rel="noopener">${esc(r.doi)}</a>`
+    : `<span class="no-val">—</span>`;
+
+  // Detail cell
+  let detail = '';
+  const v = r.verification;
+  if (v) {
+    if (v.title) {
+      detail += `<div class="detail-title">${esc(v.title)}</div>`;
+      if (v.sim !== undefined) {
+        detail += `<div class="detail-meta">${simBar(v.sim)} title similarity`;
+        if (v.foundViaBiblio) detail += ' <em>(found via text search — no DOI in reference)</em>';
+        detail += `</div>`;
+      }
+      if (v.authors) detail += `<div class="detail-meta">Authors: ${esc(v.authors)}</div>`;
+      if (v.year)    detail += `<div class="detail-meta">Year: ${v.year}</div>`;
+      if (v.journal) detail += `<div class="detail-meta">Journal: ${esc(v.journal)}</div>`;
+      if (v.doi && v.doi !== r.doi)
+        detail += `<div class="detail-meta">DOI found: <a class="doi-link" href="https://doi.org/${esc(v.doi)}" target="_blank">${esc(v.doi)}</a></div>`;
+    } else if (v.message) {
+      detail = `<span class="detail-msg">${esc(v.message)}</span>`;
+    }
+  }
+
+  return `
+    <tr data-idx="${idx}" data-status="${status}">
+      <td><span class="ref-num">${idx + 1}</span></td>
+      <td>
+        <div class="ref-text" id="rt${idx}">${esc(short)}</div>
+        <button class="ref-toggle" onclick="toggleRef(${idx})">show full</button>
+      </td>
+      <td>${doiCell}</td>
+      <td>${badge(status)}</td>
+      <td>${detail}</td>
+    </tr>`;
+}
+
+window.toggleRef = function(idx) {
+  const div = $('rt' + idx);
+  const btn = div.nextElementSibling;
+  const r   = results[idx];
+  if (!div || !r) return;
+  if (btn.textContent === 'show full') {
+    div.textContent = r.refText;
+    btn.textContent = 'collapse';
+  } else {
+    div.textContent = r.refText.slice(0, 90) + (r.refText.length > 90 ? '…' : '');
+    btn.textContent = 'show full';
+  }
+};
+
+function updateStats() {
+  const counts = { verified:0, mismatch:0, notfound:0, nodoi:0 };
+  for (const r of results) {
+    const s = r.status || 'nodoi';
+    if (s in counts) counts[s]++;
+  }
+  $('sTotal').textContent    = results.length;
+  $('sVerified').textContent = counts.verified;
+  $('sMismatch').textContent = counts.mismatch;
+  $('sNotFound').textContent = counts.notfound;
+  $('sNoDoi').textContent    = counts.nodoi;
+}
+
+function render() {
+  const f = activeFilter;
+  const visible = results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => f === 'all' || (r.status || 'nodoi') === f);
+
+  if (!visible.length) {
+    $('tbody').innerHTML = `<tr><td colspan="5"><div class="empty-state">No references in this category.</div></td></tr>`;
+    return;
+  }
+  $('tbody').innerHTML = visible.map(({ r, i }) => renderRow(r, i)).join('');
+}
+
+function exportCSV() {
+  const hdr = ['#','Reference','DOI','Status','CrossRef Title','Similarity','Authors','Year','Journal'];
+  const rows = results.map((r, i) => {
+    const v = r.verification || {};
+    return [
+      i + 1,
+      `"${(r.refText || '').replace(/"/g,'""')}"`,
+      r.doi || '',
+      r.status || 'nodoi',
+      `"${(v.title || '').replace(/"/g,'""')}"`,
+      v.sim !== undefined ? v.sim + '%' : '',
+      `"${(v.authors || '').replace(/"/g,'""')}"`,
+      v.year || '',
+      `"${(v.journal || '').replace(/"/g,'""')}"`,
+    ].join(',');
+  });
+  const csv  = [hdr.join(','), ...rows].join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: 'reference-check.csv' });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function resetUI() {
+  results = [];
+  cancelled = false;
+  activeFilter = 'all';
+  document.querySelectorAll('.chip').forEach((c, i) => c.classList.toggle('active', i === 0));
+  hide('progressCard');
+  hide('statsRow');
+  hide('resultsCard');
+  hide('rawCard');
+  $('scanNotice').style.display = 'none';
+  show('uploadCard');
+}
+
+// ─────────────────────────────────────────────
+// Main processing pipeline
+// ─────────────────────────────────────────────
+async function processFile(file) {
+  cancelled = false;
+  results   = [];
+  hide('uploadCard');
+  show('progressCard');
+  hide('statsRow');
+  hide('resultsCard');
+  hide('rawCard');
+
+  try {
+    // 1 — Extract text
+    setProgress('Extracting text from PDF…', file.name, 5);
+    const raw = await extractPDFText(file, (p, n) => {
+      setProgress('Extracting text from PDF…', `Page ${p} / ${n}`, 5 + (p / n) * 20);
+    });
+
+    if (cancelled) return;
+
+    // Detect empty / scanned PDF
+    const textDensity = raw.replace(/\s/g, '').length;
+    if (textDensity < 200) {
+      $('rawTextArea').value = raw;
+      show('rawCard');
+      $('scanNotice').style.display = 'block';
+      show('uploadCard');
+      hide('progressCard');
+      return;
+    }
+
+    // Show raw text for debug
+    $('rawTextArea').value = raw;
+    show('rawCard');
+
+    // 2 — Find bibliography section
+    setProgress('Locating bibliography section…', '', 27);
+    await sleep(80);
+    const bibText = findBibSection(raw);
+
+    // 3 — Parse references
+    setProgress('Parsing references…', '', 32);
+    await sleep(80);
+    const refList = splitRefs(bibText);
+
+    if (!refList.length) {
+      setProgress('No references found', 'Could not identify a reference list in this PDF.', 100);
+      show('uploadCard');
+      await sleep(3000);
+      hide('progressCard');
+      return;
+    }
+
+    setProgress(`Found ${refList.length} references`, 'Starting verification…', 36);
+    await sleep(300);
+
+    // Initialise results
+    for (const refText of refList) {
+      const doi = extractDOI(refText);
+      results.push({ refText, doi, status: doi ? 'checking' : 'nodoi', verification: null });
+    }
+    show('statsRow');
+    show('resultsCard');
+    updateStats();
+    render();
+
+    // 4 — Verify each reference
+    const delay = Math.max(50, parseInt($('delayInput').value) || 300);
+
+    for (let i = 0; i < results.length; i++) {
+      if (cancelled) break;
+      const r = results[i];
+      const pct = 36 + ((i / results.length) * 60);
+
+      setProgress(
+        `Verifying ${i + 1} / ${results.length}`,
+        r.doi ? `DOI: ${r.doi}` : 'Searching by text…',
+        pct
+      );
+
+      if (r.doi) {
+        const title = extractTitle(r.refText);
+        r.verification = await verifyDOI(r.doi, title);
+        r.status = r.verification.status;
+      } else {
+        const found = await searchBiblio(r.refText);
+        if (found) {
+          r.verification = found;
+          r.status = found.status;
+        } else {
+          r.verification = { message: 'No DOI in reference; bibliographic search returned no confident match.' };
+          r.status = 'nodoi';
+        }
+      }
+
+      updateStats();
+      render();
+      await sleep(delay);
+    }
+
+    if (!cancelled) {
+      setProgress('Done!', `Checked ${results.length} references.`, 100);
+      await sleep(1200);
+      hide('progressCard');
+      $('resultsHeading').textContent = `Results — ${file.name}`;
+    }
+
+  } catch (err) {
+    if (err.message !== 'cancelled') {
+      setProgress('Error', err.message, 0);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Event wiring
+// ─────────────────────────────────────────────
+const dropZone = $('dropZone');
+const fileInput = $('fileInput');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') processFile(f);
+  else alert('Please drop a PDF file.');
+});
+
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) { processFile(f); fileInput.value = ''; }
+});
+
+$('cancelBtn').addEventListener('click', () => {
+  cancelled = true;
+  hide('progressCard');
+  show('uploadCard');
+});
+
+$('exportBtn').addEventListener('click', exportCSV);
+$('resetBtn').addEventListener('click', resetUI);
+
+document.querySelectorAll('.chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.f;
+    render();
+  });
+});
+
+$('thresholdInput').addEventListener('input', e => {
+  $('thresholdVal').textContent = e.target.value + '%';
+});
+</script>
+</body>
+</html>
