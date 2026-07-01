@@ -648,9 +648,18 @@ function splitRefs(text) {
     if (isSeq) return chunkByPattern(text, /\(\d+\)/g);
   }
 
-  // Strategy 2: 1. 2. … numbered list — try line-start first, then inline
+  // Strategy 2: numbered list at line start — "1. Author" or "1 Author" (no dot)
   if (text.match(/(?:^|\n)\s*\d+\.\s+[A-Z]/m)) {
     return chunkByPattern(text, /(?:^|\n)\s*\d+\.\s+(?=[A-Z])/gm);
+  }
+  // "1 Author" style (number + spaces, no dot) — common in some journals (e.g. Breathe/ERS)
+  {
+    const nodotHits = [...text.matchAll(/(?:^|\n)(\d{1,3})\s{1,4}(?=[A-Z])/gm)];
+    if (nodotHits.length >= 2) {
+      const nnums = nodotHits.map(m => parseInt(m[1]));
+      const isSeq = nnums[0] <= 3 && nnums.slice(0, 8).every((n, i) => i === 0 || n >= nnums[i - 1]);
+      if (isSeq) return chunkByPattern(text, /(?:^|\n)\d{1,3}\s{1,4}(?=[A-Z])/gm);
+    }
   }
   // inline fallback (no newlines preserved): "1. Author" with sequential numbers
   const dotHits = [...text.matchAll(/(?<!\d)(\d{1,3})\.\s+(?=[A-Z])/g)];
