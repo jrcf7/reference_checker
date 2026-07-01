@@ -521,13 +521,20 @@ async function extractPDFText(file, onPage) {
     }
     if (curLine.parts.length) lines.push(curLine.parts.join(''));
 
-    // Join lines, de-hyphenate soft line breaks
+    // Join lines preserving newlines; de-hyphenate only soft (word-wrap) hyphens
     let pageText = '';
     for (const ln of lines) {
+      if (!ln.trim()) continue;
       if (pageText.endsWith('-')) {
-        pageText = pageText.slice(0, -1) + ln;
+        const nextCh = ln.trimStart()[0] || '';
+        // soft hyphen: next part starts with lowercase letter
+        if (nextCh && nextCh === nextCh.toLowerCase() && /[a-z]/.test(nextCh)) {
+          pageText = pageText.slice(0, -1) + ln.trimStart();
+        } else {
+          pageText += '\n' + ln;
+        }
       } else {
-        pageText += (pageText ? ' ' : '') + ln;
+        pageText += (pageText ? '\n' : '') + ln;
       }
     }
     full += pageText + '\n\n';
@@ -574,14 +581,27 @@ function findBibSection(text) {
 function splitRefs(text) {
   text = text.replace(/\r\n?/g, '\n').trim();
 
-  // Strategy 1: [1], [2] … numbered brackets
-  if (text.match(/(?:^|\n)\s*\[\d+\]/m)) {
-    return chunkByPattern(text, /(?:^|\n)\s*\[\d+\]/gm);
+  // Strategy 1: [1], [2] … numbered brackets — match anywhere in text,
+  // not just at line-start, so it works even when newlines were lost
+  const bracketHits = [...text.matchAll(/\[(\d+)\]/g)];
+  if (bracketHits.length >= 2) {
+    const nums = bracketHits.map(m => parseInt(m[1]));
+    // Confirm they start near 1 and look sequential (guards against DOI false-positives)
+    const isSeq = nums[0] <= 3 && nums.slice(0, 6).every((n, i) => i === 0 || n >= nums[i - 1]);
+    if (isSeq) return chunkByPattern(text, /\[\d+\]/g);
   }
 
-  // Strategy 2: 1. 2. … numbered list with capital letter following
+  // Strategy 2: 1. 2. … numbered list — try line-start first, then inline
   if (text.match(/(?:^|\n)\s*\d+\.\s+[A-Z]/m)) {
     return chunkByPattern(text, /(?:^|\n)\s*\d+\.\s+(?=[A-Z])/gm);
+  }
+  // inline fallback (no newlines preserved): "1. Author" with sequential numbers
+  const dotHits = [...text.matchAll(/(?<!\d)(\d{1,3})\.\s+(?=[A-Z])/g)];
+  if (dotHits.length >= 2) {
+    const dnums = dotHits.map(m => parseInt(m[1]));
+    if (dnums[0] <= 3 && dnums.slice(0, 6).every((n, i) => i === 0 || n >= dnums[i - 1])) {
+      return chunkByPattern(text, /(?<!\d)\d{1,3}\.\s+(?=[A-Z])/g);
+    }
   }
 
   // Strategy 3: blank-line separated
