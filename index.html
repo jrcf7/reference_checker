@@ -621,13 +621,19 @@ function splitRefs(text) {
     .filter(s => s.length > 30 && s.length < 3000);
   if (byBlank.length >= 2) return byBlank;
 
-  // Strategy 4: each line starting with a capital (hanging-indent style)
+  // Strategy 4: hanging-indent author-year (refs span multiple lines, no blank lines between).
+  // Only split at lines that look like the start of a new reference:
+  //   - "Surname, Initial"  — standard APA/Harvard/MLA/Chicago author pattern
+  //   - "ACRONYM, ..."      — all-caps entries like ISAAC, WHO, CDC
+  // This avoids false splits on journal-name continuation lines (e.g. "Curr. Opin. …",
+  // "Lancet 376, …") that start with a capital but are NOT new references.
+  const refStart4Re = /^(?:[A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s|[A-Z]{2,},\s+\S)/;
   const chunks = [];
   let cur = '';
   for (const ln of text.split('\n')) {
     const t = ln.trim();
     if (!t) continue;
-    if (/^[A-Z]/.test(t) && cur.length > 40) {
+    if (refStart4Re.test(t) && cur.length > 40) {
       chunks.push(cur.trim());
       cur = t;
     } else {
