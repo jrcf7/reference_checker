@@ -621,32 +621,13 @@ function splitRefs(text) {
     .filter(s => s.length > 30 && s.length < 3000);
   if (byBlank.length >= 2) return byBlank;
 
-  // Strategy 4: hanging-indent author-year (refs span multiple lines, no blank lines between).
-  // Only split at lines that look like the start of a new reference:
-  //   - "Surname, Initial"  — standard APA/Harvard/MLA/Chicago author pattern
-  //   - "ACRONYM, ..."      — all-caps entries like ISAAC, WHO, CDC
-  // This avoids false splits on journal-name continuation lines (e.g. "Curr. Opin. …",
-  // "Lancet 376, …") that start with a capital but are NOT new references.
-  const refStart4Re = /^(?:[A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s|[A-Z]{2,},\s+\S)/;
-  const chunks = [];
-  let cur = '';
-  for (const ln of text.split('\n')) {
-    const t = ln.trim();
-    if (!t) continue;
-    if (refStart4Re.test(t) && cur.length > 40) {
-      chunks.push(cur.trim());
-      cur = t;
-    } else {
-      cur += (cur ? ' ' : '') + t;
-    }
-  }
-  if (cur.length > 30) chunks.push(cur.trim());
-  if (chunks.length >= 2) return chunks;
-
-  // Strategy 5: Author-date styles concatenated inline without line breaks.
-  // Each pattern targets the ". [start of next reference]" boundary.
-  // A period ends the previous reference; the captured group marks the start of the next.
-  // Tries progressively more exotic formats; stops at the first that yields ≥ 2 references.
+  // Strategies 5a–5e: author-date boundary detection.
+  // Each pattern finds ". Surname, Initial" — the end-of-reference period followed by
+  // the start of the next reference's author.  \s+ matches both spaces AND newlines,
+  // so these work whether the text is all on one line or has preserved line breaks.
+  // Running these BEFORE the line-by-line Strategy 4 avoids false splits when an
+  // author's continuation line (e.g. "Bradman, A., et al., 2017. Elemental sulfur…")
+  // looks like a new reference to a simple capital-at-line-start heuristic.
   {
     const trySplit = (re) => {
       const hits = [...text.matchAll(re)];
@@ -683,6 +664,29 @@ function splitRefs(text) {
     //     Last resort: period + capitalized word ≥ 4 chars + another period shortly after
     const r5e = trySplit(/\.\s+([A-Z][a-z]{3,}\.?\s+(?:"[^"]+"|[A-Z]))/g);
     if (r5e) return r5e;
+  }
+
+  // Strategy 4: hanging-indent author-year fallback (refs span multiple lines, no blank
+  // lines between them, and Strategy 5 found no boundaries — e.g. numbered-but-unlabelled
+  // styles or unusual formats).  Only start a new ref at a line whose first token looks
+  // like a surname (capital + ≥2 lowercase + comma) or an all-caps acronym (WHO, ISAAC).
+  // This is the last resort before giving up.
+  {
+    const refStart4Re = /^(?:[A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s|[A-Z]{2,},\s+\S)/;
+    const chunks = [];
+    let cur = '';
+    for (const ln of text.split('\n')) {
+      const t = ln.trim();
+      if (!t) continue;
+      if (refStart4Re.test(t) && cur.length > 40) {
+        chunks.push(cur.trim());
+        cur = t;
+      } else {
+        cur += (cur ? ' ' : '') + t;
+      }
+    }
+    if (cur.length > 30) chunks.push(cur.trim());
+    if (chunks.length >= 2) return chunks;
   }
 
   // Give up – return the whole section as one entry
