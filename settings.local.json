@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(\\(Get-Item \"c:\\\\Users\\\\JRC-GEE-F7\\\\reference_checker\\\\index.html\"\\).Length; \\(Get-Content \"c:\\\\Users\\\\JRC-GEE-F7\\\\reference_checker\\\\index.html\" | Measure-Object -Line\\).Lines)"
+    ]
+  }
+}
