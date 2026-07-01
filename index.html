@@ -584,14 +584,21 @@ function findBibSection(text) {
 function splitRefs(text) {
   text = text.replace(/\r\n?/g, '\n').trim();
 
-  // Strategy 1: [1], [2] … numbered brackets — match anywhere in text,
-  // not just at line-start, so it works even when newlines were lost
+  // Strategy 1a: [N] square-bracket numbers (IEEE, Vancouver, etc.)
   const bracketHits = [...text.matchAll(/\[(\d+)\]/g)];
   if (bracketHits.length >= 2) {
     const nums = bracketHits.map(m => parseInt(m[1]));
-    // Confirm they start near 1 and look sequential (guards against DOI false-positives)
     const isSeq = nums[0] <= 3 && nums.slice(0, 6).every((n, i) => i === 0 || n >= nums[i - 1]);
     if (isSeq) return chunkByPattern(text, /\[\d+\]/g);
+  }
+
+  // Strategy 1b: (N) parenthetical numbers (some chemistry / physics journals)
+  // Filter to numbers ≤ 500 to exclude years like (2020)
+  const parenHits = [...text.matchAll(/\((\d+)\)/g)].filter(m => +m[1] <= 500);
+  if (parenHits.length >= 2) {
+    const pnums = parenHits.map(m => +m[1]);
+    const isSeq = pnums[0] <= 3 && pnums.slice(0, 8).every((n, i) => i === 0 || n >= pnums[i - 1]);
+    if (isSeq) return chunkByPattern(text, /\(\d+\)/g);
   }
 
   // Strategy 2: 1. 2. … numbered list — try line-start first, then inline
@@ -630,21 +637,46 @@ function splitRefs(text) {
   if (cur.length > 30) chunks.push(cur.trim());
   if (chunks.length >= 2) return chunks;
 
-  // Strategy 5: APA/Harvard author-year refs concatenated without line breaks.
-  // Detect ". Surname, Initial" — the period ends the previous ref, the surname starts the next.
-  // Require surname ≥ 3 lowercase chars to avoid matching abbreviations like "J." or "Vol."
-  const apaSepRe = /\.\s+([A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s+[A-Z][\w.])/g;
-  const apaBounds = [...text.matchAll(apaSepRe)];
-  if (apaBounds.length >= 2) {
-    // positions are where each new reference author block starts
-    const positions = [0, ...apaBounds.map(m => m.index + m[0].length - m[1].length)];
-    const apaRefs = positions
-      .map((s, i) => {
-        const e = i + 1 < positions.length ? positions[i + 1] : text.length;
-        return text.slice(s, e).replace(/\s+/g, ' ').trim();
-      })
-      .filter(r => r.length > 30);
-    if (apaRefs.length >= 2) return apaRefs;
+  // Strategy 5: Author-date styles concatenated inline without line breaks.
+  // Each pattern targets the ". [start of next reference]" boundary.
+  // A period ends the previous reference; the captured group marks the start of the next.
+  // Tries progressively more exotic formats; stops at the first that yields ≥ 2 references.
+  {
+    const trySplit = (re) => {
+      const hits = [...text.matchAll(re)];
+      if (hits.length < 2) return null;
+      const pos = [0, ...hits.map(m => m.index + m[0].length - m[1].length)];
+      const refs = pos
+        .map((s, i) => text.slice(s, i + 1 < pos.length ? pos[i + 1] : text.length).replace(/\s+/g, ' ').trim())
+        .filter(r => r.length > 30);
+      return refs.length >= 2 ? refs : null;
+    };
+
+    // 5a) Standard APA / Harvard / MLA / Chicago / Turabian
+    //     ". Surname, Initial."  or  ". Surname, FirstName."
+    //     Surname ≥ 3 lowercase chars guards against abbrevs like "J.", "Vol.", "Clin."
+    const r5a = trySplit(/\.\s+([A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s+[A-Z][\w.])/g);
+    if (r5a) return r5a;
+
+    // 5b) Dutch / German / French / Spanish prefix surnames
+    //     ". van den Berg, A."  ". de la Cruz, M."  ". von Humboldt, A."
+    const r5b = trySplit(/\.\s+((?:van\s+(?:d[ae]n?\s+)?|de\s+(?:l[ao]s?\s+)?|von\s+(?:d[ae]r?\s+)?|d[iu]\s+|del?\s+|les?\s+|la\s+)[A-Z][a-z]+,\s+[A-Z][\w.])/g);
+    if (r5b) return r5b;
+
+    // 5c) ALL CAPS surnames (many French, Italian, and older English journals)
+    //     ". SMITH, A."  ". GARCIA-LOPEZ, M."
+    const r5c = trySplit(/\.\s+([A-Z]{3,}(?:-[A-Z]+)?,\s+[A-Z][\w.])/g);
+    if (r5c) return r5c;
+
+    // 5d) CSE Name-Year / NLM style — no comma between surname and initials
+    //     ". Smith AB,"  ". Garcia-Lopez MJ,"  (initial block directly after surname)
+    const r5d = trySplit(/\.\s+([A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?\s+[A-Z]{1,3}\.?,\s)/g);
+    if (r5d) return r5d;
+
+    // 5e) Author surname only (some humanities styles) — ". Surname. Title"
+    //     Last resort: period + capitalized word ≥ 4 chars + another period shortly after
+    const r5e = trySplit(/\.\s+([A-Z][a-z]{3,}\.?\s+(?:"[^"]+"|[A-Z]))/g);
+    if (r5e) return r5e;
   }
 
   // Give up – return the whole section as one entry
