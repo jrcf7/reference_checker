@@ -502,39 +502,86 @@ async function extractPDFText(file, onPage) {
 
     const page    = await pdf.getPage(p);
     const content = await page.getTextContent();
+    const vp      = page.getViewport({ scale: 1 });
+    const pageW   = vp.width;
 
-    // Group items into lines by y-coordinate
-    const lines = [];
-    let curLine = { y: null, parts: [] };
+    // Collect items with coordinates
+    const items = content.items
+      .filter(it => it.str && it.str.trim())
+      .map(it => ({
+        str:    it.str,
+        x:      it.transform[4],
+        y:      it.transform[5],
+        width:  it.width || 0,
+        height: Math.abs(it.transform[3]) || 10,
+      }));
 
-    for (const item of content.items) {
-      if (!item.str) continue;
-      const y = Math.round(item.transform[5]);
+    if (!items.length) { full += '\n\n'; continue; }
 
-      if (curLine.y === null) {
-        curLine.y = y;
-      } else if (Math.abs(y - curLine.y) > 4) {
-        lines.push(curLine.parts.join(''));
-        curLine = { y, parts: [] };
+    // Detect two-column layout: if items cluster into two x-bands
+    const midX = pageW / 2;
+    const leftItems  = items.filter(it => it.x + it.width / 2 < midX);
+    const rightItems = items.filter(it => it.x + it.width / 2 >= midX);
+    const isTwoCol = leftItems.length > 5 && rightItems.length > 5 &&
+                     (leftItems.length / items.length) > 0.25 &&
+                     (rightItems.length / items.length) > 0.25;
+
+    // Group items into logical lines
+    // Sort: descending y (top of page first), then ascending x
+    const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
+
+    // Use average item height to set line-merge tolerance
+    const avgH = sorted.reduce((s, it) => s + it.height, 0) / sorted.length;
+    const lineTol = Math.max(4, avgH * 0.55);
+
+    // Assign items to line buckets
+    const lineBuckets = [];
+    for (const it of sorted) {
+      const last = lineBuckets[lineBuckets.length - 1];
+      if (!last || Math.abs(it.y - last.y) > lineTol) {
+        lineBuckets.push({ y: it.y, items: [it] });
+      } else {
+        last.items.push(it);
       }
-      curLine.parts.push(item.str);
     }
-    if (curLine.parts.length) lines.push(curLine.parts.join(''));
+
+    // Sort items within each line by x
+    for (const lb of lineBuckets) lb.items.sort((a, b) => a.x - b.x);
+
+    // Convert line buckets to text lines.
+    // For two-column pages, split each line bucket into left/right halves and
+    // collect all left-column lines first, then right-column lines.
+    let lines;
+    if (isTwoCol) {
+      const leftLines = [];
+      const rightLines = [];
+      for (const lb of lineBuckets) {
+        const leftParts  = lb.items.filter(it => it.x + it.width / 2 < midX);
+        const rightParts = lb.items.filter(it => it.x + it.width / 2 >= midX);
+        if (leftParts.length)  leftLines.push(leftParts.map(it => it.str).join(''));
+        if (rightParts.length) rightLines.push(rightParts.map(it => it.str).join(''));
+      }
+      lines = [...leftLines, '', ...rightLines];
+    } else {
+      lines = lineBuckets.map(lb => lb.items.map(it => it.str).join(''));
+    }
 
     // Join lines preserving newlines; de-hyphenate only soft (word-wrap) hyphens
     let pageText = '';
     for (const ln of lines) {
-      if (!ln.trim()) continue;
+      if (!ln.trim()) {
+        if (pageText && !pageText.endsWith('\n\n')) pageText += '\n';
+        continue;
+      }
       if (pageText.endsWith('-')) {
         const nextCh = ln.trimStart()[0] || '';
-        // soft hyphen: next part starts with lowercase letter
-        if (nextCh && nextCh === nextCh.toLowerCase() && /[a-z]/.test(nextCh)) {
+        if (nextCh && /[a-z]/.test(nextCh)) {
           pageText = pageText.slice(0, -1) + ln.trimStart();
         } else {
           pageText += '\n' + ln;
         }
       } else {
-        pageText += (pageText ? '\n' : '') + ln;
+        pageText += (pageText && !pageText.endsWith('\n') ? '\n' : '') + ln;
       }
     }
     full += pageText + '\n\n';
@@ -621,13 +668,35 @@ function splitRefs(text) {
     .filter(s => s.length > 30 && s.length < 3000);
   if (byBlank.length >= 2) return byBlank;
 
-  // Strategies 5a–5e: author-date boundary detection.
+  // Strategy 4: line-start author detection (APA/Harvard hanging-indent style).
+  // With properly extracted text (lines preserved), this is more reliable than
+  // inline boundary detection (Strategy 5) which can over-split on journal abbreviations.
+  // A new reference starts at a line that begins with:
+  //   - "Surname, I" or "Surname, Firstname" (APA)
+  //   - An all-caps organisation acronym followed by comma+space (WHO, FAO, etc.)
+  // We require the accumulated chunk to be >80 chars before splitting, to avoid
+  // triggering on short continuation lines that happen to start with a capitalised word.
+  {
+    const refStart4Re = /^(?:[A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s+[A-Z]|[A-Z]{2,4},\s+\S)/;
+    const chunks = [];
+    let cur = '';
+    for (const ln of text.split('\n')) {
+      const t = ln.trim();
+      if (!t) continue;
+      if (refStart4Re.test(t) && cur.length > 80) {
+        chunks.push(cur.trim());
+        cur = t;
+      } else {
+        cur += (cur ? ' ' : '') + t;
+      }
+    }
+    if (cur.length > 30) chunks.push(cur.trim());
+    if (chunks.length >= 2) return chunks;
+  }
+
+  // Strategies 5a–5e: author-date boundary detection (inline text, no preserved newlines).
   // Each pattern finds ". Surname, Initial" — the end-of-reference period followed by
-  // the start of the next reference's author.  \s+ matches both spaces AND newlines,
-  // so these work whether the text is all on one line or has preserved line breaks.
-  // Running these BEFORE the line-by-line Strategy 4 avoids false splits when an
-  // author's continuation line (e.g. "Bradman, A., et al., 2017. Elemental sulfur…")
-  // looks like a new reference to a simple capital-at-line-start heuristic.
+  // the start of the next reference's author.
   {
     const trySplit = (re) => {
       const hits = [...text.matchAll(re)];
@@ -641,8 +710,9 @@ function splitRefs(text) {
 
     // 5a) Standard APA / Harvard / MLA / Chicago / Turabian
     //     ". Surname, Initial."  or  ". Surname, FirstName."
-    //     Surname ≥ 3 lowercase chars guards against abbrevs like "J.", "Vol.", "Clin."
-    const r5a = trySplit(/\.\s+([A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s+[A-Z][\w.])/g);
+    //     Surname ≥ 4 lowercase chars guards against journal abbrevs like "Clin.", "Int.", "Eur."
+    //     Also requires initial to be a single capital (A–Z) to avoid matching mid-title words.
+    const r5a = trySplit(/\.\s+([A-Z][a-z]{3,}(?:-[A-Z][a-z]+)?,\s+[A-Z][A-Z.,\s]{0,3}(?:,|\s+&|\s+and\b))/g);
     if (r5a) return r5a;
 
     // 5b) Dutch / German / French / Spanish prefix surnames
@@ -664,29 +734,6 @@ function splitRefs(text) {
     //     Last resort: period + capitalized word ≥ 4 chars + another period shortly after
     const r5e = trySplit(/\.\s+([A-Z][a-z]{3,}\.?\s+(?:"[^"]+"|[A-Z]))/g);
     if (r5e) return r5e;
-  }
-
-  // Strategy 4: hanging-indent author-year fallback (refs span multiple lines, no blank
-  // lines between them, and Strategy 5 found no boundaries — e.g. numbered-but-unlabelled
-  // styles or unusual formats).  Only start a new ref at a line whose first token looks
-  // like a surname (capital + ≥2 lowercase + comma) or an all-caps acronym (WHO, ISAAC).
-  // This is the last resort before giving up.
-  {
-    const refStart4Re = /^(?:[A-Z][a-z]{2,}(?:-[A-Z][a-z]+)?,\s|[A-Z]{2,},\s+\S)/;
-    const chunks = [];
-    let cur = '';
-    for (const ln of text.split('\n')) {
-      const t = ln.trim();
-      if (!t) continue;
-      if (refStart4Re.test(t) && cur.length > 40) {
-        chunks.push(cur.trim());
-        cur = t;
-      } else {
-        cur += (cur ? ' ' : '') + t;
-      }
-    }
-    if (cur.length > 30) chunks.push(cur.trim());
-    if (chunks.length >= 2) return chunks;
   }
 
   // Give up – return the whole section as one entry
